@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>实时协作白板</title>
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --secondary: #3498db;
+            --board-bg: #f8f9fa;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            height: 100vh;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        /* 侧边栏 */
+        .sidebar {
+            background: var(--primary);
+            color: white;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        /* 白板区域 */
+        .board-container {
+            position: relative;
+            background: var(--board-bg);
+            cursor: crosshair;
+        }
+
+        #board {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* 工具面板 */
+        .toolbar {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        /* 聊天窗口 */
+        .chat-container {
+            margin-top: 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        .message {
+            background: rgba(255,255,255,0.2);
+            padding: 8px;
+            margin: 5px 0;
+            border-radius: 4px;
+        }
+
+        /* 用户列表 */
+        .user-list {
+            list-style: none;
+            margin-top: 15px;
+        }
+
+        .user-item::before {
+            content: "•";
+            color: var(--secondary);
+            margin-right: 8px;
+        }
+
+        /* 颜色选择器 */
+        .color-picker {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 5px;
+            margin: 10px 0;
+        }
+
+        .color-option {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+        }
+
+        .color-option.selected {
+            border-color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>在线用户 (<span id="userCount">0</span>)</h2>
+        <ul class="user-list" id="userList"></ul>
+        <div class="chat-container">
+            <div id="chatMessages"></div>
+            <input 
+                type="text" 
+                id="chatInput" 
+                placeholder="输入聊天消息..."
+                style="width: 100%; margin-top: 10px; padding: 8px;"
+            >
+        </div>
+    </div>
+    
+    <div class="board-container">
+        <canvas id="board"></canvas>
+        <div class="toolbar">
+            <select id="toolSelect">
+                <option value="pen">画笔</option>
+                <option value="eraser">橡皮擦</option>
+                <option value="shape">形状</option>
+            </select>
+            <div class="color-picker">
+                <div class="color-option" style="background: #e74c3c" data-color="#e74c3c"></div>
+                <div class="color-option" style="background: #3498db" data-color="#3498db"></div>
+                <div class="color-option" style="background: #2ecc71" data-color="#2ecc71"></div>
+                <div class="color-option" style="background: #f1c40f" data-color="#f1c40f"></div>
+            </div>
+            <button onclick="undo()">撤销</button>
+            <button onclick="clearBoard()">清空</button>
+        </div>
+    </div>
+
+    <script>
+        // 协作白板核心系统
+        class CollaborativeBoard {
+            constructor() {
+                this.canvas = document.getElementById('board');
+                this.ctx = this.canvas.getContext('2d');
+                this.users = new Map();
+                this.history = [];
+                this.currentPath = [];
+                this.isDrawing = false;
+                
+                // 初始化事件监听
+                this.initEventListeners();
+                this.initResizeObserver();
+                this.initWebSocket();
+            }
+
+            initEventListeners() {
+                // 鼠标事件
+                this.canvas.addEventListener('mousedown', this.startDrawing.bind(this));
+                this.canvas.addEventListener('mousemove', this.draw.bind(this));
+                this.canvas.addEventListener('mouseup', this.stopDrawing.bind(this));
+                this.canvas.addEventListener('mouseout', this.stopDrawing.bind(this));
+
+                // 颜色选择
+                document.querySelectorAll('.color-option').forEach(option => {
+                    option.addEventListener('click', () => this.selectColor(option.dataset.color));
+                });
+
+                // 聊天输入
+                document.getElementById('chatInput').addEventListener('keypress', e => {
+                    if (e.key === 'Enter' && e.target.value.trim()) {
+                        this.sendMessage(e.target.value);
+                        e.target.value = '';
+                    }
+                });
+            }
+
+            initResizeObserver() {
+                // 响应式画布
+                const resizeCanvas = () => {
+                    this.canvas.width = this.canvas.offsetWidth;
+                    this.canvas.height = this.canvas.offsetHeight;
+                    this.redraw();
+                };
+                resizeCanvas();
+                window.addEventListener('resize', resizeCanvas);
+            }
+
+            initWebSocket() {
+                // 模拟 WebSocket 通信
+                this.ws = {
+                    send: data => setTimeout(() => this.handleMessage(JSON.parse(data)), 100),
+                    onmessage: null
+                };
+
+                setInterval(() => {
+                    this.ws.send(JSON.stringify({
+                        type: 'heartbeat',
+                        user: this.currentUser
+                    }));
+                }, 5000);
+            }
+
+            // 绘图逻辑
+            startDrawing(e) {
+                this.isDrawing = true;
+                const [x, y] = this.getCanvasCoords(e);
+                this.currentPath = [{ x, y, pressure: 1 }];
+                this.ctx.beginPath();
+                this.ctx.moveTo(x, y);
+            }
+
+            draw(e) {
+                if (!this.isDrawing) return;
+                const [x, y] = this.getCanvasCoords(e);
+                
+                this.currentPath.push({ x, y, pressure: 1 });
+                this.ctx.lineTo(x, y);
+                this.ctx.stroke();
+
+                // 广播绘图数据
+                this.ws.send(JSON.stringify({
+                    type: 'draw',
+                    path: this.currentPath,
+                    color: this.currentColor,
+                    tool: document.getElementById('toolSelect').value
+                }));
+            }
+
+            // 协作处理
+            handleMessage(msg) {
+                switch (msg.type) {
+                    case 'draw':
+                        this.drawRemote(msg);
+                        break;
+                    case 'chat':
+                        this.displayChat(msg);
+                        break;
+                    case 'userUpdate':
+                        this.updateUserList(msg.users);
+                        break;
+                }
+            }
+
+            // 其他核心方法
+            // ... (完整实现包含撤销/重做、用户管理、聊天等功能)
+        }
+
+        // 初始化白板系统
+        const boardSystem = new CollaborativeBoard();
+
+        // 工具函数
+        function getCanvasCoords(e) {
+            const rect = boardSystem.canvas.getBoundingClientRect();
+            return [
+                e.clientX - rect.left,
+                e.clientY - rect.top
+            ];
+        }
+
+        // UI 更新函数
+        function updateUserList(users) {
+            const list = document.getElementById('userList');
+            list.innerHTML = users.map(user => `
+                <li class="user-item">${user.name}</li>
+            `).join('');
+            document.getElementById('userCount').textContent = users.length;
+        }
+
+        // 初始化执行
+        document.getElementById('color-option').click();
+    </script>
+</body>
+</html>
