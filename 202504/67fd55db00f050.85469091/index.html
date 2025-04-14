@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>待办事项</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        body {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 0 20px;
+            background: #f0f2f5;
+        }
+
+        .todo-container {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 2rem;
+        }
+
+        #todoInput {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
+        }
+
+        button {
+            padding: 12px 24px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        .todo-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .todo-item {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            background: #f8f9fa;
+            margin-bottom: 8px;
+            border-radius: 6px;
+            transition: transform 0.2s;
+        }
+
+        .todo-item:hover {
+            transform: translateX(5px);
+        }
+
+        .todo-item.completed {
+            background: #e9ecef;
+            opacity: 0.7;
+        }
+
+        .todo-item.completed span {
+            text-decoration: line-through;
+        }
+
+        .delete-btn {
+            margin-left: auto;
+            background: #dc3545;
+            padding: 6px 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="todo-container">
+        <div class="input-group">
+            <input 
+                type="text" 
+                id="todoInput" 
+                placeholder="输入新的待办事项..."
+                autofocus
+            >
+            <button onclick="addTodo()">添加</button>
+        </div>
+        <ul class="todo-list" id="todoList"></ul>
+    </div>
+
+    <script>
+        // 初始化待办事项数组
+        let todos = JSON.parse(localStorage.getItem('todos')) || [];
+
+        // 首次加载渲染列表
+        renderTodoList();
+
+        // 添加待办事项
+        function addTodo() {
+            const input = document.getElementById('todoInput');
+            const text = input.value.trim();
+            
+            if(text) {
+                todos.push({
+                    id: Date.now(),
+                    text: text,
+                    completed: false
+                });
+                
+                input.value = '';
+                saveTodos();
+                renderTodoList();
+            }
+        }
+
+        // 删除待办事项
+        function deleteTodo(id) {
+            todos = todos.filter(todo => todo.id !== id);
+            saveTodos();
+            renderTodoList();
+        }
+
+        // 切换完成状态
+        function toggleComplete(id) {
+            todos = todos.map(todo => {
+                if(todo.id === id) {
+                    return {...todo, completed: !todo.completed};
+                }
+                return todo;
+            });
+            saveTodos();
+            renderTodoList();
+        }
+
+        // 保存到 localStorage
+        function saveTodos() {
+            localStorage.setItem('todos', JSON.stringify(todos));
+        }
+
+        // 渲染待办列表
+        function renderTodoList() {
+            const list = document.getElementById('todoList');
+            list.innerHTML = todos.map(todo => `
+                <li class="todo-item ${todo.completed ? 'completed' : ''}">
+                    <input 
+                        type="checkbox" 
+                        ${todo.completed ? 'checked' : ''}
+                        onchange="toggleComplete(${todo.id})"
+                    >
+                    <span>${todo.text}</span>
+                    <button 
+                        class="delete-btn"
+                        onclick="deleteTodo(${todo.id})"
+                    >删除</button>
+                </li>
+            `).join('');
+        }
+
+        // 回车键提交
+        document.getElementById('todoInput').addEventListener('keypress', (e) => {
+            if(e.key === 'Enter') addTodo();
+        });
+    </script>
+</body>
+</html>
