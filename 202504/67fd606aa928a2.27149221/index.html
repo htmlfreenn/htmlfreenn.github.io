@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>加密货币仪表盘</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --secondary: #3498db;
+            --background: #f5f6fa;
+            --text: #2c3e50;
+        }
+
+        [data-theme="dark"] {
+            --primary: #3498db;
+            --background: #2c3e50;
+            --text: #f5f6fa;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: var(--background);
+            color: var(--text);
+            font-family: 'Segoe UI', sans-serif;
+            padding: 20px;
+            transition: background 0.3s, color 0.3s;
+        }
+
+        .dashboard {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .price-change {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
+
+        .positive { background: #27ae60; color: white; }
+        .negative { background: #e74c3c; color: white; }
+
+        #priceChart { height: 400px; }
+
+        .notification {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--primary);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .input-field {
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 100%;
+        }
+
+        button {
+            background: var(--secondary);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: opacity 0.3s;
+        }
+
+        button:hover { opacity: 0.9; }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="card">
+            <h2>实时监控</h2>
+            <input type="text" id="coinInput" placeholder="输入代币符号" class="input-field">
+            <button onclick="addCoin()">添加监控</button>
+            <div id="watchlist" style="margin-top: 15px;"></div>
+        </div>
+
+        <div class="card">
+            <h2>价格趋势 <span id="currentCoin"></span></h2>
+            <canvas id="priceChart"></canvas>
+        </div>
+
+        <div class="card">
+            <h2>投资组合</h2>
+            <div id="portfolio"></div>
+            <input type="number" id="investmentAmount" placeholder="投资金额" class="input-field">
+            <button onclick="addInvestment()">记录投资</button>
+        </div>
+    </div>
+
+    <div class="notification" id="notification"></div>
+
+    <script>
+        const state = {
+            watchlist: JSON.parse(localStorage.getItem('watchlist')) || ['bitcoin', 'ethereum'],
+            portfolio: JSON.parse(localStorage.getItem('portfolio')) || {},
+            chart: null,
+            currentCoin: 'bitcoin',
+            alerts: JSON.parse(localStorage.getItem('alerts')) || {}
+        };
+
+        // 初始化
+        (async () => {
+            renderWatchlist();
+            renderPortfolio();
+            loadPriceChart(state.currentCoin);
+            startPriceUpdates();
+        })();
+
+        async function startPriceUpdates() {
+            setInterval(async () => {
+                try {
+                    const response = await axios.get(
+                        `https://api.coingecko.com/api/v3/simple/price?ids=${state.watchlist.join(',')}&vs_currencies=usd&include_24hr_change=true`
+                    );
+                    updatePrices(response.data);
+                    checkAlerts(response.data);
+                } catch (error) {
+                    showNotification('价格更新失败');
+                }
+            }, 10000);
+        }
+
+        function updatePrices(data) {
+            document.getElementById('watchlist').innerHTML = state.watchlist.map(coin => `
+                <div style="margin: 10px 0; padding: 10px; border: 1px solid #eee; border-radius: 6px;">
+                    <h3>${coin.toUpperCase()}</h3>
+                    <p>价格: $${data[coin]?.usd || '--'}</p>
+                    <p class="price-change ${data[coin]?.usd_24h_change > 0 ? 'positive' : 'negative'}">
+                        ${data[coin]?.usd_24h_change?.toFixed(2) || '--'}%
+                    </p>
+                    <button onclick="loadPriceChart('${coin}')">图表</button>
+                    <button onclick="setAlert('${coin}')">预警</button>
+                </div>
+            `).join('');
+        }
+
+        async function loadPriceChart(coin) {
+            try {
+                const response = await axios.get(
+                    `https://api.coingecko.com/api/v3/coins/${coin}/market_chart?vs_currency=usd&days=30&interval=daily`
+                );
+                renderChart(response.data.prices.map(p => p[1]));
+                document.getElementById('currentCoin').textContent = coin.toUpperCase();
+            } catch (error) {
+                showNotification('图表加载失败');
+            }
+        }
+
+        function renderChart(prices) {
+            if (state.chart) state.chart.destroy();
+            
+            state.chart = new Chart(document.getElementById('priceChart'), {
+                type: 'line',
+                data: {
+                    labels: Array.from({length: 30}, (_, i) => i + 1),
+                    datasets: [{
+                        label: '价格趋势',
+                        data: prices,
+                        borderColor: '#3498db',
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        function addCoin() {
+            const coin = document.getElementById('coinInput').value.trim().toLowerCase();
+            if (coin && !state.watchlist.includes(coin)) {
+                state.watchlist.push(coin);
+                localStorage.setItem('watchlist', JSON.stringify(state.watchlist));
+                updatePrices();
+            }
+        }
+
+        function setAlert(coin) {
+            const threshold = prompt('设置价格预警阈值 (USD):');
+            if (threshold) {
+                state.alerts[coin] = parseFloat(threshold);
+                localStorage.setItem('alerts', JSON.stringify(state.alerts));
+                showNotification(`${coin.toUpperCase()} 预警设置为 $${threshold}`);
+            }
+        }
+
+        function checkAlerts(data) {
+            Object.entries(state.alerts).forEach(([coin, threshold]) => {
+                const currentPrice = data[coin]?.usd;
+                if (currentPrice && currentPrice >= threshold) {
+                    showNotification(`⚠️ ${coin.toUpperCase()} 已达到 $${threshold}！`);
+                }
+            });
+        }
+
+        function showNotification(msg) {
+            const el = document.getElementById('notification');
+            el.textContent = msg;
+            el.style.display = 'block';
+            setTimeout(() => el.style.display = 'none', 3000);
+        }
+
+        // 投资组合功能
+        function addInvestment() {
+            const amount = parseFloat(document.getElementById('investmentAmount').value);
+            if (amount && state.currentCoin) {
+                state.portfolio[state.currentCoin] = {
+                    amount: (state.portfolio[state.currentCoin]?.amount || 0) + amount,
+                    timestamp: Date.now()
+                };
+                localStorage.setItem('portfolio', JSON.stringify(state.portfolio));
+                renderPortfolio();
+            }
+        }
+
+        function renderPortfolio() {
+            document.getElementById('portfolio').innerHTML = 
+                Object.entries(state.portfolio).map(([coin, data]) => `
+                    <div style="margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 6px;">
+                        <h3>${coin.toUpperCase()}</h3>
+                        <p>持仓量: ${data.amount}</p>
+                    </div>
+                `).join('');
+        }
+    </script>
+</body>
+</html>
