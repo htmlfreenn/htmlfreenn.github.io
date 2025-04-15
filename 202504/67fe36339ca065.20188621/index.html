@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Canvas-粒子时钟</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+    }
+    canvas {
+      background: radial-gradient(#fff, #8c738c);
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+  </style>
+</head>
+<body>
+  <canvas></canvas>
+
+  <script>
+    // 工具函数
+    function getRandom(min, max) {
+      return Math.floor(Math.random() * (max + 1 - min) + min);
+    }
+
+    function getCurrentTimeString() {
+      return new Date().toTimeString().slice(0, 8);
+    }
+
+    // 粒子类
+    class Particle {
+      constructor(canvas, ctx) {
+        this.canvas = canvas;
+        this.ctx = ctx;
+        const r = Math.min(canvas.width, canvas.height) / 2;
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+        const rad = (getRandom(0, 360) / 180) * Math.PI;
+        this.x = cx + r * Math.cos(rad);
+        this.y = cy + r * Math.sin(rad);
+        this.size = getRandom(4, 8);
+      }
+
+      draw() {
+        this.ctx.beginPath();
+        this.ctx.fillStyle = '#5445544d';
+        this.ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        this.ctx.fill();
+      }
+
+      moveTo(dx, dy) {
+        const duration = 500;
+        const sx = this.x, sy = this.y;
+        const xSpeed = (dx - sx) / duration;
+        const ySpeed = (dy - sy) / duration;
+        const startTime = Date.now();
+
+        const _move = () => {
+          const elapsedTime = Date.now() - startTime;
+          this.x = sx + xSpeed * elapsedTime;
+          this.y = sy + ySpeed * elapsedTime;
+          if (elapsedTime < duration) {
+            requestAnimationFrame(_move);
+          }
+        };
+        _move();
+      }
+    }
+
+    // 粒子时钟主类
+    class ParticleClick {
+      constructor(el) {
+        this.canvas = document.querySelector(el);
+        this.ctx = this.canvas.getContext('2d', { willReadFrequently: true });
+        this.text = null;
+        this.particles = [];
+        this.init();
+      }
+
+      init() {
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+      }
+
+      clear() {
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      }
+
+      draw() {
+        this.clear();
+        this.drawText();
+        this.particles.forEach((p) => p.draw());
+        requestAnimationFrame(() => this.draw());
+      }
+
+      drawText() {
+        const { ctx, canvas: { width, height } } = this;
+        const newText = getCurrentTimeString();
+        if (newText === this.text) return;
+        this.text = newText;
+
+        ctx.beginPath();
+        ctx.fillStyle = '#000';
+        ctx.textBaseline = 'middle';
+        ctx.font = '140px sans-serif';
+        ctx.fillText(this.text, (width - ctx.measureText(this.text).width) / 2, height / 2);
+
+        const points = this.getPoints();
+        this.clear();
+
+        for (let i = 0; i < points.length; i++) {
+          let p = this.particles[i];
+          if (!p) {
+            p = new Particle(this.canvas, this.ctx);
+            this.particles.push(p);
+          }
+          const [x, y] = points[i];
+          p.moveTo(x, y);
+        }
+
+        if (points.length < this.particles.length) {
+          this.particles.splice(points.length);
+        }
+      }
+
+      getPoints() {
+        const gap = 6;
+        const { ctx, canvas: { width, height } } = this;
+        const { data } = ctx.getImageData(0, 0, width, height);
+        const points = [];
+
+        for (let i = 0; i < width; i += gap) {
+          for (let j = 0; j < height; j += gap) {
+            const index = (i + j * width) * 4;
+            if (data[index] === 0 && 
+                data[index + 1] === 0 && 
+                data[index + 2] === 0 && 
+                data[index + 3] === 255) {
+              points.push([i, j]);
+            }
+          }
+        }
+        return points;
+      }
+    }
+
+    // 初始化时钟
+    const clock = new ParticleClick('canvas');
+    clock.draw();
+
+    // 窗口大小变化处理
+    window.addEventListener('resize', () => {
+      clock.init();
+    });
+  </script>
+</body>
+</html>
