@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>全球服务器延迟测试</title>
+    <style>
+        :root {
+            --bg-color: #f7f8fc;
+            --card-bg-color: #ffffff;
+            --text-primary: #343a40;
+            --text-secondary: #6c757d;
+            --accent-color: #4A90E2;
+            --accent-gradient: linear-gradient(45deg, #4A90E2, #50E3C2);
+            --border-color: #e9ecef;
+            --latency-excellent: #22c55e;
+            --latency-good: #3b82f6;
+            --latency-average: #f59e0b;
+            --latency-poor: #ef4444;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+            background-color: var(--bg-color);
+            background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23e9ecef' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+            color: var(--text-primary);
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            align-items: center;
+            padding: 2rem 1rem;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        header { text-align: center; margin-bottom: 3rem; width: 100%; }
+        h1 {
+            font-size: clamp(2.5rem, 5vw, 3.5rem);
+            font-weight: 800;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem;
+        }
+        .subtitle { font-size: 1.1rem; color: var(--text-secondary); }
+        main {
+            width: 100%;
+            max-width: 1200px;
+            flex-grow: 1;
+        }
+        .status-message {
+            text-align: center;
+            color: var(--text-secondary);
+            height: 24px;
+            margin-bottom: 2rem;
+            font-size: 1rem;
+        }
+        #results-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+        .result-card {
+            background-color: var(--card-bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            text-align: center;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            border-top: 4px solid var(--border-color);
+            position: relative;
+            overflow: hidden;
+        }
+        .result-card.is-testing {
+            animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        .result-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.1);
+        }
+        .refresh-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 32px;
+            height: 32px;
+            background-color: rgba(0, 0, 0, 0.05);
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0.4;
+            transition: opacity 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+            outline: none;
+        }
+        .result-card:hover .refresh-btn {
+            opacity: 1;
+        }
+        .refresh-btn:hover {
+            background-color: rgba(0, 0, 0, 0.1);
+            transform: rotate(90deg);
+        }
+        .refresh-btn svg {
+            width: 18px;
+            height: 18px;
+            fill: var(--text-secondary);
+        }
+        .location-name { font-size: 1.25rem; font-weight: 600; margin-bottom: 4px; }
+        .location-name-en { font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 24px; }
+        .latency-value { font-size: 3.5rem; font-weight: 700; margin-bottom: 12px; line-height: 1; }
+        .latency-unit { font-size: 1.5rem; color: var(--text-secondary); margin-left: 4px; }
+        .latency-grade { font-size: 1rem; font-weight: 600; padding: 6px 16px; border-radius: 20px; display: inline-block; }
+        .grade-excellent { color: var(--latency-excellent); background-color: rgba(34, 197, 94, 0.1); }
+        .grade-good { color: var(--latency-good); background-color: rgba(59, 130, 246, 0.1); }
+        .grade-average { color: var(--latency-average); background-color: rgba(245, 158, 11, 0.1); }
+        .grade-poor { color: var(--latency-poor); background-color: rgba(239, 68, 68, 0.1); }
+        footer { 
+            width: 100%; margin-top: 4rem; padding-bottom: 1rem;
+            text-align: center; font-size: 0.9rem; color: var(--text-secondary); line-height: 1.6; 
+        }
+        footer a { color: var(--accent-color); text-decoration: none; font-weight: 500; }
+        footer a:hover { text-decoration: underline; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        @media (max-width: 600px) {
+            body { padding: 1.5rem 1rem; }
+            h1 { font-size: 2rem; }
+            .subtitle { font-size: 1rem; }
+            #results-container { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>全球服务器延迟测试</h1>
+        <p class="subtitle">检测您到全球主要节点的网络连接速度</p>
+    </header>
+
+    <main>
+        <div id="statusMessage" class="status-message"></div>
+        <section id="results-container"></section>
+    </main>
+
+    <footer id="footer"></footer>
+
+    <script>
+        const apiEndpoints = [
+            { code: 'tyo', name: '日本', nameEn: 'Tokyo, Japan', url: 'https://ecomping-tyo.contabo.net/ping' },
+            { code: 'sin', name: '新加坡', nameEn: 'Singapore', url: 'https://ecomping-sin.contabo.net/ping' },
+            { code: 'syd', name: '悉尼', nameEn: 'Sydney, Australia', url: 'https://ecomping-syd.contabo.net/ping' },
+            { code: 'sea', name: '美西', nameEn: 'Seattle, USA', url: 'https://ecomping-sea.contabo.net/ping' },
+            { code: 'pme', name: '欧洲', nameEn: 'Paris/Munich, Europe', url: 'https://ecomping-pme.contabo.net/ping' },
+            { code: 'ony', name: '美东', nameEn: 'New York, USA', url: 'https://ecomping-ony.contabo.net/ping' }
+        ];
+
+        const resultsContainer = document.getElementById('results-container');
+        const statusMessage = document.getElementById('statusMessage');
+        const refreshIconSvg = `<svg viewBox="0 0 24 24"><path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" /></svg>`;
+
+        function getLatencyGrade(latency) {
+            if (latency === -1) return { text: '超时', class: 'grade-poor' };
+            if (latency < 60) return { text: '极佳', class: 'grade-excellent' };
+            if (latency < 120) return { text: '良好', class: 'grade-good' };
+            if (latency < 200) return { text: '一般', class: 'grade-average' };
+            return { text: '较差', class: 'grade-poor' };
+        }
+
+        function updateCard(card, result) {
+            const grade = getLatencyGrade(result.latency_ms);
+            const latencyColorVar = `var(--${grade.class.replace('grade-', 'latency-')})`;
+            const latencyValueEl = card.querySelector('.latency-value');
+            const latencyGradeEl = card.querySelector('.latency-grade');
+
+            if (result.latency_ms === -1) {
+                latencyValueEl.innerHTML = 'N/A';
+            } else {
+                latencyValueEl.innerHTML = `${result.latency_ms}<span class="latency-unit">ms</span>`;
+            }
+            
+            latencyValueEl.style.color = latencyColorVar;
+            card.style.borderTopColor = latencyColorVar;
+            latencyGradeEl.textContent = grade.text;
+            latencyGradeEl.className = `latency-grade ${grade.class}`;
+            card.classList.remove('is-testing');
+        }
+
+        async function testSingleNode(endpointCode) {
+            const endpoint = apiEndpoints.find(e => e.code === endpointCode);
+            if (!endpoint) return;
+
+            const card = document.querySelector(`.result-card[data-code="${endpoint.code}"]`);
+            if (!card || card.classList.contains('is-testing')) return;
+
+            card.classList.add('is-testing');
+            const latencyValueEl = card.querySelector('.latency-value');
+            const latencyGradeEl = card.querySelector('.latency-grade');
+            latencyValueEl.innerHTML = '---';
+            latencyValueEl.style.color = 'var(--text-secondary)';
+            latencyGradeEl.textContent = '测试中';
+            latencyGradeEl.className = 'latency-grade';
+
+            try {
+                const response = await fetch(endpoint.url);
+                if (!response.ok) throw new Error('Network error');
+                const data = await response.json();
+                updateCard(card, { ...endpoint, latency_ms: data.latency_ms });
+            } catch (error) {
+                updateCard(card, { ...endpoint, latency_ms: -1 });
+            }
+        }
+
+        function renderInitialCards() {
+            resultsContainer.innerHTML = '';
+            apiEndpoints.forEach(endpoint => {
+                const card = document.createElement('div');
+                card.className = 'result-card is-testing';
+                card.dataset.code = endpoint.code;
+
+                const button = document.createElement('button');
+                button.className = 'refresh-btn';
+                button.setAttribute('aria-label', `重新测试 ${endpoint.name}`);
+                button.innerHTML = refreshIconSvg;
+                
+                const content = document.createElement('div');
+                content.innerHTML = `
+                    <div class="location-name">${endpoint.name}</div>
+                    <div class="location-name-en">${endpoint.nameEn}</div>
+                    <div class="latency-value" style="color: var(--text-secondary);">---</div>
+                    <div class="latency-grade">测试中</div>
+                `;
+                
+                card.appendChild(button);
+                card.appendChild(content);
+
+                button.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    testSingleNode(endpoint.code);
+                });
+
+                resultsContainer.appendChild(card);
+            });
+        }
+        
+        async function startFullTest() {
+            statusMessage.textContent = '正在连接全球节点，请稍候...';
+            
+            const testPromises = apiEndpoints.map(endpoint => {
+                const card = document.querySelector(`.result-card[data-code="${endpoint.code}"]`);
+                return fetch(endpoint.url)
+                    .then(response => response.ok ? response.json() : Promise.reject('Network error'))
+                    .then(data => updateCard(card, { ...endpoint, latency_ms: data.latency_ms }))
+                    .catch(err => {
+                        updateCard(card, { ...endpoint, latency_ms: -1 });
+                    });
+            });
+
+            await Promise.allSettled(testPromises);
+            
+            const cards = Array.from(resultsContainer.querySelectorAll('.result-card'));
+            cards.sort((a, b) => {
+                const latencyTextA = a.querySelector('.latency-value').textContent.replace('ms', '');
+                const latencyTextB = b.querySelector('.latency-value').textContent.replace('ms', '');
+                const latencyA = latencyTextA === 'N/A' ? 9999 : parseInt(latencyTextA, 10);
+                const latencyB = latencyTextB === 'N/A' ? 9999 : parseInt(latencyTextB, 10);
+                return latencyA - latencyB;
+            });
+            cards.forEach(card => resultsContainer.appendChild(card));
+
+            statusMessage.textContent = '测试完成！';
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const footer = document.getElementById('footer');
+            footer.innerHTML = `Copyright &copy; ${new Date().getFullYear()} <a href="https://linux.do/u/f-droid" target="_blank">F-Droid</a> retain all rights reserved.<br>如果您喜欢这个工具，请给作者点个赞吧！😊`;
+            
+            renderInitialCards();
+            startFullTest();
+        });
+    </script>
+</body>
+</html>
